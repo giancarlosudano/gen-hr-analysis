@@ -11,96 +11,79 @@ import pandas as pd
 
 def valutazione():
     try:
-
-        llm_helper = LLMHelper()
+        
+        llm_helper = LLMHelper(temperature=0, max_tokens=1500)
 
         start_time_gpt = time.perf_counter()
-        llm_skills_text = llm_helper.get_completion(f"""Dal seguente CV
-        ###
-        {cv}
-        ###estrai tutte le skill del candidato e mostrale riga per riga, non includere niente altro nella risposta, non usare punti elenco. Descrivi bene la skill anche con il numero di anni presente. Non includere righe vuote nella risposta.
-        """)
+
+        print("Prompt Estrazione:")
+        print(st.session_state["prompt_estrazione"])
+        print("JD:")
+        print(st.session_state["jd"])
+        
+        llm_skills_text = llm_helper.get_hr_completion(st.session_state["prompt_estrazione"].format(jd = st.session_state["jd"]))
         end_time_gpt = time.perf_counter()
         gpt_duration = end_time_gpt - start_time_gpt
 
-        st.markdown(f"Risposta GPT in *{gpt_duration:.2f}*")
-
-        llm_skills = llm_skills_text.strip().split('\n')
-
-        for skill in llm_skills:
-            if skill == "":
-                llm_skills.remove(skill)
-
-        st.dataframe(llm_skills, use_container_width=True)
+        st.markdown(f"Risposta GPT in *{gpt_duration:.2f}*:")
+        st.markdown(llm_skills_text)
         
-        jd_urls = llm_helper.blob_client.get_all_urls(container_name="documents-jd")
+        inizio_json = llm_skills_text.index('{')
+        fine_json = llm_skills_text.rindex('}') + 1
+
+        json_string = llm_skills_text[inizio_json:fine_json]
+        json_data = json.loads(json_string)
+        
+        st.json(json_data)
+        
+        container = st.session_state["container"] 
+        cv_urls = llm_helper.blob_client.get_all_urls(container_name=container)
+        
         form_client = AzureFormRecognizerClient()
 
-        for jd_url in jd_urls:
-
-            start_time_cv = time.perf_counter()
-            results = form_client.analyze_read(jd_url['fullpath'])
-            end_time_cv = time.perf_counter()
-            duration = end_time_cv - start_time_cv
-            jd = results[0]
-            
-            exp = st.expander(f"Documento {jd_url['file']} caricato in {duration:.2f} secondi", expanded = True)
-            with exp:
-                st.markdown(jd)
-
-            matching_count = 0
-            
-            # Estrazione skill dalla Job Description
-            start_time_gpt = time.perf_counter()
-            llm_skills_text = llm_helper.get_completion(f"""Dalla seguente Job description
-            ###
-            {jd}
-            ###estrai tutte i requisiti che il candidato deve avere e mostrale riga per riga, non includere niente altro nella risposta, non usare punti elenco. Descrivi bene la skill anche con il numero di anni presente.
-            """)
-            end_time_gpt = time.perf_counter()
-            gpt_duration = end_time_gpt - start_time_gpt
-
-            st.markdown(f"Estrazione richieste dalla job description - Risposta GPT in *{gpt_duration:.2f}*")
-
-            llm_skills = llm_skills_text.strip().split('\n')
-
-            for skill in llm_skills:
-                if skill == "":
-                    llm_skills.remove(skill)
-
-            st.dataframe(llm_skills, use_container_width=True)
-            
-            delay = int(st.session_state['delay'])
-
-            for skill in llm_skills:
-                st.markdown(f"JD {jd_url['file']} Waiting {delay} sec...")
-                time.sleep(delay)
-
-                question = f"""
-                Verifica se nella seguente Jod Description:
-                ###
-                {jd}
-                ###
-                è richiesta la seguente skil:
-                {skill}
-
-                Rispondi con True o False senza aggiungere altro alla risposta
-                """
-
-                llm_match_text = llm_helper.get_completion(question)
-                ll_match_text_clean = llm_match_text.strip().lower()
+        for cv_url in cv_urls:
+            try:
+                start_time_cv = time.perf_counter()
+                results = form_client.analyze_read(cv_url['fullpath'])
+                end_time_cv = time.perf_counter()
+                duration = end_time_cv - start_time_cv
+                cv = results[0]
                 
-                if 'true' in ll_match_text_clean:
-                    matching_count = matching_count + 1
-                    jd_url['found'] += skill + ' ----- '
-                  
-                st.markdown(f"**Requisito:** :blue[{skill}] \n(GPT response **{llm_match_text.strip()}**) - Matching Count: {matching_count}") 
+                exp = st.expander(f"CV {cv_url['file']} caricato in {duration:.2f} secondi", expanded = True)
+                with exp:
+                    st.markdown(cv)
 
-            jd_url['matching'] = matching_count
+                matching_count = 0
+                delay = int(st.session_state['delay'])
+                
+                for competenza in json_data["competenze"]:
+                    time.sleep(delay)
+                    skill = competenza["skill"]
+                    description = competenza["description"]
+                    
+                    llm_match_text = llm_helper.get_hr_completion(st.session_state["prompt_confronto"].format(cv = cv, skill = skill, description = description))
+                    
+                    # cerco la stringa "true]" invece di "[true]" perchè mi sono accorto che a volte usa la rispota [Risposta: True] invece di Risposta: [True]
+                    if 'true]' in llm_match_text.lower() or 'possibilmente vera' in llm_match_text.lower():
+                        matching_count = matching_count + 1
+                        cv_url['found'] += skill + ' ----- '
 
-        df = pd.DataFrame(jd_urls)
+                    st.markdown(f"Requisito: :blue[{skill}: {description}]")
+                    st.markdown("Risposta GPT: ")
+                    st.markdown(f"{llm_match_text}")
+                    st.markdown(f"**Matching Count: {matching_count}**")
+                    
+                cv_url['matching'] = matching_count
+
+            except Exception as e:
+                error_string = traceback.format_exc()
+                st.error(error_string)
+
+        df = pd.DataFrame(cv_urls)
         df = df.sort_values(by=['matching'], ascending=False)
-
+        
+        st.write('')
+        st.markdown('## Risultati Matching CV')
         st.markdown(df.to_html(render_links=True),unsafe_allow_html=True)
 
     except Exception as e:
@@ -109,46 +92,57 @@ def valutazione():
         print(error_string)
 
 try:
-    st.title("Matching Job")
-
-    llm_helper = LLMHelper()
-    cv_urls = llm_helper.blob_client.get_all_urls(container_name="documents-jd")
-    df = pd.DataFrame(cv_urls)
-    df = df.sort_values(by=['matching'], ascending=False)
-    st.markdown(df.to_html(render_links=True),unsafe_allow_html=True)
-    st.write('')
-    st.write('')
-
-    if st.session_state['delay'] == None or st.session_state['delay'] == '':
-        st.session_state['delay'] = 1
-
-    sample = """Nome Cognome Esperto di Test Automation Sommario Esperto di Test Automation con oltre 5 anni di esperienza nella progettazione, 
-    implementazione e mantenimento di framework di test automation per applicazioni web e mobile. 
-    Competenze approfondite su Selenium, Appium, TestNG, JUnit e altre tecnologie di test automation. 
-    Forte capacità di lavorare in team e di collaborare con i membri del team di sviluppo per garantire la qualità del software. 
-    In grado di gestire progetti di test automation di grandi dimensioni e di garantire una copertura dei test completa e affidabile. 
-    Esperienza professionale Test Automation Engineer Nome Azienda Mese/Anno - Mese/Anno Progettazione, implementazione e mantenimento di framework di test automation per applicazioni web e mobile utilizzando Selenium, Appium, TestNG e JUnit. 
-    Collaborazione con il team di sviluppo per garantire la qualità del software e la copertura dei test. 
-    Gestione di progetti di test automation di grandi dimensioni e garanzia di una copertura dei test completa e affidabile. 
-    Definizione e implementazione di strategie di test automation e miglioramento continuo dei processi di test. Formazione del personale e supporto tecnico ai team di sviluppo e di test. 
-    Test Automation Engineer Nome Azienda Mese/Anno - Mese/Anno Progettazione, implementazione e mantenimento di framework di test automation per applicazioni web e mobile utilizzando Selenium, Appium, TestNG e JUnit. 
-    Partecipazione alla definizione di strategie di test e alla pianificazione dei test automation. 
-    Collaborazione con il team di sviluppo per garantire la qualità del software e la copertura dei test. 
-    Valutazione delle nuove tecnologie e metodologie di test automation per migliorare i processi di test. 
-    Formazione del personale e supporto tecnico ai team di sviluppo e di test. 
-    Competenze tecniche Esperienza approfondita nella progettazione, implementazione e mantenimento di framework di test automation per applicazioni web e mobile utilizzando Selenium, Appium, TestNG e JUnit. 
-    Conoscenza avanzata di linguaggi di programmazione come Java, Python e JavaScript. 
-    Competenze su strumenti di gestione di progetto come JIRA e Confluence. 
-    Forti capacità di analisi e risoluzione dei problemi. 
-    Capacità di lavorare in team e di collaborare con i membri del team di sviluppo per garantire la qualità del software. 
-    Forte attenzione ai dettagli e capacità di gestire progetti di test automation di grandi dimensioni. 
-    Formazione Laurea in Informatica presso l'Università degli Studi di XYZ (Mese/Anno - Mese/Anno) Corso di formazione avanzato su Test Automation con Selenium e Java (Mese/Anno)
-    """
-
-    cv = st.text_area(label="Matching dei Job in archivio rispetto a questo CV:",
-                      value=sample, height=400)
     
-    st.session_state['delay'] = st.slider("Delay in secondi tra le chiamate Open AI", 0, 90, st.session_state['delay'])
+    prompt_estrazione_default = """Fai una analisi accurata del CV delimitato da ###
+Cerca tutte le competenze del candidato, mostra il ragionamento che ti ha portato a scegliere ogni singola competenza
+Cerca le competenze cercando di dedurle anche dalle esperienze lavorative. 
+Alla fine mostra tutte le competenze trovate sotto forma di unico file json con dentro una lista di elementi chiamata "competenze" e i singoli elementi avranno chiave "skill" e valore "description"
+
+Il CV è il seguente:
+###
+{jd}
+###
+
+Risposta:\n"""
+
+    prompt_confronto_default = """
+Verifica se nella seguente Job Description delimitata da ### è richiesta la competenza delimitata da --- 
+Mostra il ragionamento step by step che ti ha portato alla risposta.                     
+Mostra la risposta finale esclusivamente con il valore di True o False tra parentesi quadre. Se pensi che la risposta sia "possibilmente Vera" scrivi [True] e se pensi che sia "possibilmente falsa" scrivi [False]  
+
+La Job description è il seguente:
+###
+{cv}
+###
+
+la competenza da cercare è:
+---
+{skill}: {description}
+---
+
+Esempio di risposta:
+
+Ragionamento: 'inserisci qui il tuo ragionamento'
+Risposta: [True] o [False]
+"""
+
+    container_default = "documents-jd"
+    
+    jd_default = "Inserisci qui un CV"
+    st.title("Matching Job Decription")
+
+    if st.session_state['delay'] is None or st.session_state['delay'] == '':
+        st.session_state['delay'] = 1
+    
+    llm_helper = LLMHelper()
+        
+    st.session_state["container"] = container_default
+    st.session_state["prompt_estrazione"] = prompt_estrazione_default
+    st.session_state["prompt_confronto"] = prompt_confronto_default
+    
+    st.session_state["jd"] = st.text_area(label="Matching delle Job Description in archivio rispetto a questo CV:", value=jd_default, height=300)
+
+    st.session_state['delay'] = st.slider("Delay in secondi tra le chiamate Open AI", 0, 5, st.session_state['delay'])
     st.button(label="Calcola match", on_click=valutazione)
 
     result_placeholder = st.empty()

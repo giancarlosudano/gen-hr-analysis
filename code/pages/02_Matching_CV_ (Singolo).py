@@ -11,24 +11,17 @@ import pandas as pd
 
 def valutazione():
     try:
-
+        
         llm_helper = LLMHelper(temperature=0, max_tokens=1500)
 
         start_time_gpt = time.perf_counter()
+
+        print("Prompt Estrazione:")
+        print(st.session_state["prompt_estrazione"])
+        print("JD:")
+        print(st.session_state["jd"])
         
-        llm_skills_text = llm_helper.get_hr_completion(f"""Fai una analisi accurata della Job Description delimitata da ###
-        Cerca tutte le competenze richieste e mostra il ragionamento che ti ha portato a scegliere ogni singola competenza
-        non aggregare le competenze che trovi aggregate in singole righe
-        Cerca le competenze in modo completo in tutta la Job description, non solo nella parte iniziale
-        Alla fine mostra tutte le competenze trovate sotto forma di unico file json con dentro una lista di elementi chiamata "competenze" e i singoli elementi avranno chiave "skill" e valore "description"
-        Mostra tutto in lingua inglese
-  
-        La job description è la seguente:
-        ###
-        {jd}
-        ###
-        
-        Risposta:\n""")
+        llm_skills_text = llm_helper.get_hr_completion(st.session_state["prompt_estrazione"].format(jd = st.session_state["jd"]))
         end_time_gpt = time.perf_counter()
         gpt_duration = end_time_gpt - start_time_gpt
 
@@ -43,7 +36,9 @@ def valutazione():
         
         st.json(json_data)
         
-        cv_urls = llm_helper.blob_client.get_all_urls(container_name="documents-cv")
+        container = st.session_state["container"] 
+        cv_urls = llm_helper.blob_client.get_all_urls(container_name=container)
+        
         form_client = AzureFormRecognizerClient()
 
         for cv_url in cv_urls:
@@ -66,29 +61,10 @@ def valutazione():
                     skill = competenza["skill"]
                     description = competenza["description"]
                     
-                    question = f"""
-                    Verifica se nel seguente CV delimitato da ###
-                    è presente la seguente conoscenza o esperienza:
-                    {skill}: {description}
-
-                    Mostra il ragionamento step by step e fai vedere come hai trovato la risposta. 
-                    Dopo aver mostrato il ragionamento mostra la risposta finale True o False tra parentesi quadre.
-                    Mostra tutto in lingua inglese
-
-                    il CV è il seguente:
-                    ###
-                    {cv}
-                    ###
+                    llm_match_text = llm_helper.get_hr_completion(st.session_state["prompt_confronto"].format(cv = cv, skill = skill, description = description))
                     
-                    Esempio di risposta:
-                    
-                    Reasoning: 'insert here step by step reasoning'
-                    Answer: [True] or [False]
-                    """
-                                   
-                    llm_match_text = llm_helper.get_hr_completion(question)
-                                      
-                    if '[true]' in llm_match_text.lower():
+                    # cerco la stringa "true]" invece di "[true]" perchè mi sono accorto che a volte usa la rispota [Risposta: True] invece di Risposta: [True]
+                    if 'true]' in llm_match_text.lower() or 'possibilmente vera' in llm_match_text.lower():
                         matching_count = matching_count + 1
                         cv_url['found'] += skill + ' ----- '
 
@@ -100,7 +76,7 @@ def valutazione():
                 cv_url['matching'] = matching_count
 
             except Exception as e:
-                error_string = traceback.format_exc() 
+                error_string = traceback.format_exc()
                 st.error(error_string)
 
         df = pd.DataFrame(cv_urls)
@@ -117,26 +93,56 @@ def valutazione():
 
 try:
     
+    prompt_estrazione_default = """Fai una analisi accurata della Job Description delimitata da ###
+Cerca tutte le competenze richieste nella job description, mostra il ragionamento che ti ha portato a scegliere ogni singola competenza
+non aggregare le competenze che trovi aggregate in singole righe
+Cerca le competenze in modo completo in tutta la Job description, non solo nella parte iniziale. 
+Alla fine mostra tutte le competenze trovate sotto forma di unico file json con dentro una lista di elementi chiamata "competenze" e i singoli elementi avranno chiave "skill" e valore "description"
+
+La job description è la seguente:
+###
+{jd}
+###
+
+Risposta:\n"""
+
+    prompt_confronto_default = """
+Verifica se nel seguente CV delimitato da ### è presente la seguente competenza delimitata da --- 
+Considera anche una possibile deduzione ad (esempio: se un candidato conosce linguaggi di programmazione è probabile che conosca anche i sistemi operativi).
+Mostra il ragionamento step by step che ti ha portato alla risposta.                     
+Mostra la risposta finale esclusivamente con il valore di True o False tra parentesi quadre. Se pensi che la risposta sia "possibilmente Vera" scrivi [True] e se pensi che sia "possibilmente falsa" scrivi [False]  
+
+il CV è il seguente:
+###
+{cv}
+###
+
+la competenza da cercare è:
+---
+{skill}: {description}
+---
+
+Esempio di risposta:
+
+Ragionamento: 'inserisci qui il tuo ragionamento'
+Risposta: [True] o [False]
+"""
+
+    container_default = "documents-cv"
+    
+    jd_default = "Inserisci qui una job description"
     st.title("Matching CV")
 
-    if st.session_state['delay'] == None or st.session_state['delay'] == '':
-        st.session_state['delay'] = 0
+    if st.session_state['delay'] is None or st.session_state['delay'] == '':
+        st.session_state['delay'] = 1
     
     llm_helper = LLMHelper()
-    cv_urls = llm_helper.blob_client.get_all_urls(container_name="documents-cv")
-    df = pd.DataFrame(cv_urls)
-    df = df.sort_values(by=['matching'], ascending=False)
-    st.markdown(df.to_html(render_links=True),unsafe_allow_html=True)
-    st.write('')
-    st.write('')
-
-    sample = """Posto di Lavoro nella società XXX come tester automation nel team DevOps
-Il candidato deve avere esperienze di programmazione in Java da almeno 2 anni
-e deve conoscere il framework JUnit e Selenium. Conoscenza dei DB
-    """
-
-    jd = st.text_area(label="Matching dei CV in archivio rispetto a questa Job Description:",
-                      value=sample, height=300)
+        
+    st.session_state["container"] = container_default
+    st.session_state["prompt_estrazione"] = prompt_estrazione_default
+    st.session_state["prompt_confronto"] = prompt_confronto_default
+    
+    st.session_state["jd"] = st.text_area(label="Matching dei CV in archivio rispetto a questa Job Description:", value=jd_default, height=300)
 
     st.session_state['delay'] = st.slider("Delay in secondi tra le chiamate Open AI", 0, 5, st.session_state['delay'])
     st.button(label="Calcola match", on_click=valutazione)
