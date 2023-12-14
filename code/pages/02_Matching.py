@@ -139,8 +139,11 @@ Risposta: [True] o [False]
     llm_helper = LLMHelper()
         
     st.session_state["container"] = container_default
-    st.session_state["prompt_estrazione"] = prompt_estrazione_default
-    st.session_state["prompt_confronto"] = prompt_confronto_default
+    # st.session_state["prompt_estrazione"] = prompt_estrazione_default
+    # st.session_state["prompt_confronto"] = prompt_confronto_default
+    
+    st.session_state["prompt_estrazione"] = st.text_area(label="Prompt di Estrazione skill da Job Description:", value=prompt_estrazione_default, height=300)
+    st.session_state["prompt_confronto"] = st.text_area(label="Prompt di confronto di una skill nel CV:", value=prompt_confronto_default, height=300)
     
     st.session_state["jd"] = st.text_area(label="Matching dei CV in archivio rispetto a questa Job Description:", value=jd_default, height=300)
 

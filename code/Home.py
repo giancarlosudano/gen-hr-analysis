@@ -41,7 +41,7 @@ try:
         st.button("Controllo Deployment", on_click=check_deployment)
 
     model = st.selectbox(
-            "OpenAI GPT-3 Model",
+            "OpenAI Model",
             [os.environ['OPENAI_ENGINE']]
         )
     
