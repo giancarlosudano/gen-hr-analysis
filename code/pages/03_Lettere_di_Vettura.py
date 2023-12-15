@@ -100,8 +100,11 @@ try:
     import pandas as pd
     import numpy as np
     
-    date_begin = st.date_input("Data Inizio", datetime.date(2023, 10, 1))
-    date_end = st.date_input("Data Fine", datetime.date(2023, 10, 30))
+    coldate1, coldate2 = st.columns([1,1])
+    with coldate1:
+        date_begin = st.date_input("Data Inizio", datetime.date(2023, 10, 1))
+    with coldate2:
+        date_end = st.date_input("Data Fine", datetime.date(2023, 10, 30))
     
     llm_helper = LLMHelper()
         
@@ -114,30 +117,40 @@ try:
         st.text_input("Allegati", value="Nomi file allegati")
         st.divider()
         st.write("Estrazione Dati da allegati Email")
-        st.text_area("Mittente", value="Mittente da CIM", height=100)
-        st.text_input("Codice Mittente", value="Codice Mittente da CIM")
-        st.text_area("Destinatario", value="Destinatario da CIM", height=100)
-        st.text_input("Codice Destinatario", value="Codice Destinatario  da CIM")
-        st.text_area("Luogo di consegna", value="Valore da CIM", height=100)
-        st.text_input("Codice Luogo di Consegna", value="Valore da CIM")
-        
+        st.text_area("Mittente (1)", value="Mittente da CIM", height=100)
+        st.text_input("Codice Mittente (2)", value="Valore da CIM")
+        st.text_input("Codice Mittente (3)", value="Valore da CIM")
+        st.text_area("Destinatario (4)", value="Valore da CIM", height=100)
+        st.text_input("Codice Destinatario (5)", value="Valore da CIM")
+        st.text_input("Codice Destinatario (6)", value="Valore da CIM")
+        st.text_area("Raccordo di consegna (10)", value="Valore da CIM", height=100)
+        st.text_input("Codice Raccordo di Destinazione (11)", value="Valore da CIM")
+        st.text_input("Codice Stazione Destinatario (12)", value="Valore da CIM")
+        st.text_area("Condizioni Commerciali (13)", value="Valore da CIM")
+        st.text_input("Condizioni Commerciali Codice (14)", value="Valore da CIM")
+        st.text_area("Luogo di Consegna / Presa in carico (16)", value="Valore da CIM")
+        st.text_input("Codice Luogo di Consegna / Presa in carico (17)", value="Valore da CIM")
+        st.text_area("Matricola carro / distinta (18)", value="Valore da CIM")
+        st.text_input("Codice Affrancazione (49)", value="Valore da CIM")
+        st.text_area("Altri trasportatori e Ruolo (57)", value="Valore da CIM")
+        st.text_input("Trasportatore contrattuale (58)", value="Valore da CIM")
         
         colid1, colid2 = st.columns([1,1])
         with colid1:
-            st.write("Identificazione Spedizione")
+            st.write("Identificazione Spedizione (62)")
             st.text_input("Codice Paese", value="Valore da CIM")
             st.text_input("Codice Stazione", value="Valore da CIM")
             st.text_input("Codice Impresa", value="Valore da CIM")
             st.text_input("Codice Spedizione", value="Valore da CIM")
         
         with colid2:
-            st.write("Identificazione Spedizione da Sistema Orpheus se esistente")
+            st.write("Sistema Orpheus")
             st.text_input("Codice Paese (2)", value="Valore da CIM")
             st.text_input("Codice Stazione (2)", value="Valore da CIM")
             st.text_input("Codice Impresa (2)", value="Valore da CIM")
             st.text_input("Codice Spedizione (2)", value="Valore da CIM")
         
-        st.write("Luogo e Data di stesura")
+        st.write("Luogo e Data di stesura (29)")
         col1, col2 = st.columns([1,1])
         with col1:
             st.text_input("Luogo", value="Valore da CIM")
