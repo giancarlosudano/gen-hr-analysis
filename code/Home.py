@@ -30,7 +30,7 @@ def check_deployment():
 try:
     StreamlitHelper.hide_footer()
 
-    st.title("Matching CV e Job Description con Open AI")
+    st.title("Mercitalia - Lettere di Vettura")
     
     llm_helper = LLMHelper()
 
